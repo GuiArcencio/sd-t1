@@ -2,27 +2,46 @@ import zmq
 from threading import Thread
 
 
-def _text_reader_thread(socket_name: str = "text", context: zmq.Context = None):
-    context = context or zmq.Context.instance()
+class TextManager:
+    _socket: zmq.Socket
+    _reading_thread: Thread
 
-    socket: zmq.Socket = context.socket(zmq.PAIR)
-    socket.connect(f"inproc://{socket_name}")
+    def __init__(self, poller: zmq.Poller):
+        context = zmq.Context.instance()
 
-    while True:
-        message = input()
-        if message:
-            socket.send_string(message)
+        self._socket: zmq.Socket = context.socket(zmq.PULL)
+        self._socket.bind(f"inproc://text")
 
+        poller.register(self._socket, zmq.POLLIN)
 
-class TextReader:
-    socket: zmq.Socket
-    reading_thread: Thread
+        self._reading_thread = Thread(target=self._read_loop)
+        self._reading_thread.start()
 
-    def __init__(self, socket_name: str = "text", context: zmq.Context = None):
-        context = context or zmq.Context.instance()
+    def is_in(self, events: dict) -> bool:
+        return self._socket in events
 
-        self.socket: zmq.Socket = context.socket(zmq.PAIR)
-        self.socket.bind(f"inproc://{socket_name}")
+    def read(self) -> str:
+        try:
+            text = self._socket.recv_string(zmq.DONTWAIT)
+        except zmq.ZMQError:
+            text = ""
 
-        self.reading_thread = Thread(target=_text_reader_thread, args=(socket_name,))
-        self.reading_thread.start()
+        return text
+
+    def _read_loop(self):
+        context = zmq.Context.instance()
+
+        socket: zmq.Socket = context.socket(zmq.PAIR)
+        socket.connect(f"inproc://text")
+
+        while True:
+            message = input()
+            if message:
+                socket.send_string(message)
+
+    def write(self, text: str):
+        writing_thread = Thread(target=self._write, args=(text,))
+        writing_thread.start()
+
+    def _write(self, text: str):
+        print(text)
