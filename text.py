@@ -64,7 +64,8 @@ class TextManager:
 
         poller.register(self._socket, zmq.POLLIN)
 
-        self._appthread = Thread(target=self._run_app, args=(username,))
+        self._textapp = TextApp(username=username)
+        self._appthread = Thread(target=self._run_app)
         self._appthread.start()
 
         self._shutdown = Event()
@@ -87,9 +88,8 @@ class TextManager:
     def user_has_quit(self) -> bool:
         return self._shutdown.is_set()
 
-    def _run_app(self, username: str):
+    def _run_app(self):
         loop = asyncio.new_event_loop()
-        self._textapp = TextApp(username=username)
         self._textapp.run(loop=loop)
 
         self._shutdown.set()
