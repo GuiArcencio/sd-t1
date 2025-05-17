@@ -2,7 +2,7 @@ import zmq
 import pyaudio
 from queue import Queue, Full, Empty
 import struct
-from threading import Thread
+from threading import Thread, Event
 
 
 class AudioManager:
@@ -12,6 +12,7 @@ class AudioManager:
     _write_stream: pyaudio.Stream
     _write_queue: Queue
     _reading_thread: Thread
+    _shutdown: Event
 
     def __init__(self, poller: zmq.Poller):
         p = pyaudio.PyAudio()
@@ -62,7 +63,8 @@ class AudioManager:
             output=True,
         )
 
-        self._reading_thread = Thread(target=self._collect_audio_data)
+        self._shutdown = Event()
+        self._reading_thread = Thread(target=self._read_audio_data)
         self._reading_thread.start()
 
     def is_in(self, events: dict) -> bool:
@@ -76,24 +78,32 @@ class AudioManager:
 
         return data
 
-    def _collect_audio_data(self):
+    def write(self, data: bytes):
+        writing_thread = Thread(target=self._write, args=(data,))
+        writing_thread.start()
+
+    def stop(self):
+        self._shutdown.set()
+        self._read_stream.close()
+        self._write_stream.close()
+
+    def _read_audio_data(self):
         context = zmq.Context.instance()
 
         socket: zmq.Socket = context.socket(zmq.PUSH)
         socket.connect(f"inproc://audio")
 
         data = b""
-        while True:
-            frame = self._read_queue.get()
-            data += struct.pack("!f", frame)
+        while not self._shutdown.is_set():
+            try:
+                frame = self._read_queue.get(timeout=1)
+                data += struct.pack("!f", frame)
 
-            if len(data) >= 256:
-                socket.send(data)
-                data = b""
-
-    def write(self, data: bytes):
-        writing_thread = Thread(target=self._write, args=(data,))
-        writing_thread.start()
+                if len(data) >= 256:
+                    socket.send(data)
+                    data = b""
+            except Empty:
+                pass
 
     def _write(self, data: bytes):
         for (frame,) in struct.iter_unpack("!f", data):
