@@ -1,2 +1,2 @@
-python app.py --room teste --username AAA --peer localhost:2002 --bind 0.0.0.0:2001
-python app.py --room teste --username BBB --peer localhost:2001 --bind 0.0.0.0:2002
+python app.py --room abcde --username AAA --peer localhost:2002 --bind 0.0.0.0:2001
+python app.py --room abcde --username BBB --peer localhost:2001 --bind 0.0.0.0:2002

@@ -96,7 +96,7 @@ class AudioManager:
         data = b""
         while not self._shutdown.is_set():
             try:
-                frame = self._read_queue.get(timeout=1)
+                frame = self._read_queue.get(timeout=0.5)
                 data += struct.pack("!f", frame)
 
                 if len(data) >= 256:

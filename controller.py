@@ -18,34 +18,30 @@ def run_main_loop(
         room_code=room_code,
         poller=poller,
     )
-    text_manager = TextManager(poller)
+    text_manager = TextManager(username, poller)
     audio_manager = AudioManager(poller)
 
-    try:
-        running = True
-        while running:
-            events = dict(poller.poll())
+    running = True
+    while running:
+        events = dict(poller.poll())
 
-            if network_manager.is_in(events):
-                msgs = network_manager.read()
-                for msg in msgs:
-                    if msg.message_type == MessageFrame.MESSAGE_AUDIO:
-                        audio_manager.write(msg.data)
-                    else:
-                        text_manager.write(f"{msg.username}> {msg.data.decode()}")
+        if network_manager.is_in(events):
+            msgs = network_manager.read()
+            for msg in msgs:
+                if msg.message_type == MessageFrame.MESSAGE_AUDIO:
+                    audio_manager.write(msg.data)
+                else:
+                    text_manager.write(msg.username, msg.data.decode("utf-8"))
 
-            if text_manager.is_in(events):
-                msg = text_manager.read()
-                network_manager.write_text(msg)
+        if text_manager.is_in(events):
+            msg = text_manager.read()
+            network_manager.write_text(msg)
 
-            if audio_manager.is_in(events):
-                data = audio_manager.read()
-                network_manager.write_audio(data)
+        if audio_manager.is_in(events):
+            data = audio_manager.read()
+            network_manager.write_audio(data)
 
-            if text_manager.user_has_quit():
-                running = False
-    except KeyboardInterrupt:
-        print("Exiting...")
-    finally:
-        text_manager.stop()
-        audio_manager.stop()
+        if text_manager.user_has_quit():
+            running = False
+
+    audio_manager.stop()
