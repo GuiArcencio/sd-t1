@@ -4,6 +4,8 @@ from queue import Queue, Full, Empty
 import struct
 from threading import Thread, Event
 
+import zlib
+
 
 class AudioManager:
     _socket: zmq.Socket
@@ -27,7 +29,7 @@ class AudioManager:
         poller.register(self._socket)
 
         def read_callback(in_data, frame_count, time_info, status):
-            for (frame,) in struct.iter_unpack("=f", in_data):
+            for (frame,) in struct.iter_unpack("=h", in_data):
                 try:
                     self._read_queue.put_nowait(frame)
                 except Full:
@@ -43,14 +45,14 @@ class AudioManager:
                 except Empty:
                     frame = 0
 
-                out_data += struct.pack("=f", frame)
+                out_data += struct.pack("=h", frame)
 
             return (out_data, pyaudio.paContinue)
 
         self._read_stream = p.open(
             rate=44100,
             channels=1,
-            format=pyaudio.paFloat32,
+            format=pyaudio.paInt16,
             stream_callback=read_callback,
             input=True,
         )
@@ -58,7 +60,7 @@ class AudioManager:
         self._write_stream = p.open(
             rate=44100,
             channels=1,
-            format=pyaudio.paFloat32,
+            format=pyaudio.paInt16,
             stream_callback=write_callback,
             output=True,
         )
@@ -97,16 +99,20 @@ class AudioManager:
         while not self._shutdown.is_set():
             try:
                 frame = self._read_queue.get(timeout=0.5)
-                data += struct.pack("!f", frame)
+                data += struct.pack("!h", frame)
 
-                if len(data) >= 256:
+                if len(data) >= 2048:
+                    data = zlib.compress(data)
+
                     socket.send(data)
                     data = b""
             except Empty:
                 pass
 
     def _write(self, data: bytes):
-        for (frame,) in struct.iter_unpack("!f", data):
+        data = zlib.decompress(data)
+
+        for (frame,) in struct.iter_unpack("!h", data):
             try:
                 self._write_queue.put_nowait(frame)
             except Full:
