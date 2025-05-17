@@ -18,6 +18,8 @@ class AudioManager:
     _writing_thread: Thread
     _shutdown: Event
 
+    _last_frame: int
+
     def __init__(self, poller: zmq.Poller):
         p = pyaudio.PyAudio()
         context = zmq.Context.instance()
@@ -25,6 +27,7 @@ class AudioManager:
         self._read_queue = Queue()
         self._write_queue = Queue()
         self._buffer_queue = Queue()
+        self._shutdown = Event()
 
         self._socket: zmq.Socket = context.socket(zmq.PULL)
         self._socket.bind(f"inproc://audio")
@@ -37,20 +40,23 @@ class AudioManager:
 
             return (None, pyaudio.paContinue)
 
+        self._last_frame = 0
+
         def write_callback(in_data, frame_count, time_info, status):
             out_data = b""
             for _ in range(frame_count):
                 try:
                     frame = self._write_queue.get_nowait()
+                    self._last_frame = frame
                 except Empty:
-                    frame = 0
+                    frame = self._last_frame
 
                 out_data += struct.pack("=h", frame)
 
             return (out_data, pyaudio.paContinue)
 
         self._read_stream = p.open(
-            rate=44100,
+            rate=16000,
             channels=1,
             format=pyaudio.paInt16,
             stream_callback=read_callback,
@@ -58,14 +64,13 @@ class AudioManager:
         )
 
         self._write_stream = p.open(
-            rate=44100,
+            rate=16000,
             channels=1,
             format=pyaudio.paInt16,
             stream_callback=write_callback,
             output=True,
         )
 
-        self._shutdown = Event()
         self._reading_thread = Thread(target=self._read_audio_data)
         self._reading_thread.start()
         self._writing_thread = Thread(target=self._write_audio_data)
@@ -123,5 +128,5 @@ class AudioManager:
 
             for (frame,) in struct.iter_unpack("!h", data):
                 buffer.append(frame)
-                if len(buffer) > 44100:
+                if len(buffer) > 16000:
                     self._write_queue.put(buffer.popleft())
