@@ -61,7 +61,6 @@ class AudioManager:
             rate=44100,
             channels=1,
             format=pyaudio.paInt16,
-            stream_callback=write_callback,
             output=True,
         )
 
@@ -83,7 +82,7 @@ class AudioManager:
         return data
 
     def write(self, data: bytes):
-        self._buffer_queue.put(data)
+        self._buffer_queue.put(zlib.decompress(data))
 
     def stop(self):
         self._shutdown.set()
@@ -112,16 +111,18 @@ class AudioManager:
                 data = b""
 
     def _write_audio_data(self):
-        buffer = deque()
+        buffer = b""
 
         while not self._shutdown.is_set():
             try:
                 data = self._buffer_queue.get(timeout=0.5)
             except Empty:
                 continue
-            data = zlib.decompress(data)
 
             for (frame,) in struct.iter_unpack("!h", data):
-                buffer.append(frame)
-                if len(buffer) > 44100:
-                    self._write_queue.put(buffer.popleft())
+                buffer += struct.pack("=h", frame)
+                if len(buffer) > 44100 * 2:
+                    write_data = buffer[:44100]
+                    buffer = buffer[44100:]
+
+                    self._write_stream.write(write_data)
