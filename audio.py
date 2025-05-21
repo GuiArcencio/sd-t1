@@ -59,6 +59,7 @@ class AudioStream:
 
 
 class AudioManager:
+    _p: pyaudio.PyAudio
     _socket: zmq.Socket
     _read_stream: pyaudio.Stream
     _read_queue: Queue
@@ -68,8 +69,8 @@ class AudioManager:
 
     _last_frame: int
 
-    def __init__(self, peer_addresses: list[str], poller: zmq.Poller):
-        p = pyaudio.PyAudio()
+    def __init__(self, poller: zmq.Poller):
+        self._p = pyaudio.PyAudio()
         context = zmq.Context.instance()
 
         self._read_queue = Queue()
@@ -86,7 +87,7 @@ class AudioManager:
 
             return (None, pyaudio.paContinue)
 
-        self._read_stream = p.open(
+        self._read_stream = self._p.open(
             rate=SAMPLE_RATE,
             channels=1,
             format=pyaudio.paInt16,
@@ -98,8 +99,6 @@ class AudioManager:
         self._reading_thread.start()
 
         self._write_streams = {}
-        for address in peer_addresses:
-            self._write_streams[address] = AudioStream(p)
 
     def is_in(self, events: dict) -> bool:
         return self._socket in events
@@ -112,8 +111,13 @@ class AudioManager:
 
         return data
 
-    def write(self, data: bytes, address: str):
-        self._write_streams[address].write(data)
+    def write(self, data: bytes, username: str):
+        stream = self._write_streams.get(username)
+        if not stream:
+            stream = AudioStream(self._p)
+            self._write_streams[username] = stream
+
+        stream.write(data)
 
     def stop(self):
         self._shutdown.set()

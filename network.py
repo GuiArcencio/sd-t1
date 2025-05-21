@@ -48,13 +48,13 @@ class NetworkManager:
 
         return False
 
-    def read(self) -> list[tuple[MessageFrame, str]]:
+    def read(self) -> list[MessageFrame]:
         messages = []
 
-        for socket, address in zip(self._sub_sockets, self._peer_addresses):
+        for socket in self._sub_sockets:
             try:
                 data = socket.recv(zmq.DONTWAIT)
-                messages.append((MessageFrame.from_bytes(data), address))
+                messages.append(MessageFrame.from_bytes(data))
             except zmq.ZMQError:
                 # No new messages
                 pass

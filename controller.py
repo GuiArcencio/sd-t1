@@ -19,7 +19,7 @@ def run_main_loop(
         poller=poller,
     )
     text_manager = TextManager(username, poller)
-    audio_manager = AudioManager(other_addresses, poller)
+    audio_manager = AudioManager(poller)
 
     def _main_loop():
         running = True
@@ -28,9 +28,9 @@ def run_main_loop(
 
             if network_manager.is_in(events):
                 msgs = network_manager.read()
-                for msg, addr in msgs:
+                for msg in msgs:
                     if msg.message_type == MessageFrame.MESSAGE_AUDIO:
-                        audio_manager.write(msg.data, addr)
+                        audio_manager.write(msg.data, msg.username)
                     else:
                         text_manager.write(msg.username, msg.data.decode("utf-8"))
 
