@@ -6,27 +6,73 @@ from threading import Thread, Event
 from collections import deque
 import zlib
 
+SAMPLE_RATE = 16000
+
+
+class AudioStream:
+    _stream: pyaudio.Stream
+    _thread: Thread
+    _buffer: Queue
+    _shutdown: Event
+
+    def __init__(self, p: pyaudio.PyAudio = None):
+        if not p:
+            p = pyaudio.PyAudio()
+
+        self._buffer = Queue()
+        self._shutdown = Event()
+
+        self._stream = p.open(
+            rate=SAMPLE_RATE,
+            channels=1,
+            format=pyaudio.paInt16,
+            output=True,
+        )
+
+        self._thread = Thread(target=self._write_audio_data)
+        self._thread.start()
+
+    def write(self, data: bytes):
+        self._buffer.put(data)
+
+    def stop(self):
+        self._shutdown.set()
+        self._stream.close()
+
+    def _write_audio_data(self):
+        while not self._shutdown.is_set():
+            try:
+                data = self._buffer.get(timeout=0.5)
+            except Empty:
+                continue
+            data = zlib.decompress(data)
+
+            native_data = b""
+            for (frame,) in struct.iter_unpack("!h", data):
+                native_data += struct.pack("=h", frame)
+
+            try:
+                self._stream.write(native_data)
+            except OSError:
+                # Stream closed
+                return
+
 
 class AudioManager:
     _socket: zmq.Socket
     _read_stream: pyaudio.Stream
     _read_queue: Queue
-    _write_stream: pyaudio.Stream
-    _write_queue: Queue
-    _buffer_queue: Queue
     _reading_thread: Thread
-    _writing_thread: Thread
+    _write_streams: dict[str, AudioStream]
     _shutdown: Event
 
     _last_frame: int
 
-    def __init__(self, poller: zmq.Poller):
+    def __init__(self, peer_addresses: list[str], poller: zmq.Poller):
         p = pyaudio.PyAudio()
         context = zmq.Context.instance()
 
         self._read_queue = Queue()
-        self._write_queue = Queue()
-        self._buffer_queue = Queue()
         self._shutdown = Event()
 
         self._socket: zmq.Socket = context.socket(zmq.PULL)
@@ -40,41 +86,20 @@ class AudioManager:
 
             return (None, pyaudio.paContinue)
 
-        self._last_frame = 0
-
-        def write_callback(in_data, frame_count, time_info, status):
-            out_data = b""
-            for _ in range(frame_count):
-                try:
-                    frame = self._write_queue.get_nowait()
-                    self._last_frame = frame
-                except Empty:
-                    frame = self._last_frame
-
-                out_data += struct.pack("=h", frame)
-
-            return (out_data, pyaudio.paContinue)
-
         self._read_stream = p.open(
-            rate=16000,
+            rate=SAMPLE_RATE,
             channels=1,
             format=pyaudio.paInt16,
             stream_callback=read_callback,
             input=True,
         )
 
-        self._write_stream = p.open(
-            rate=16000,
-            channels=1,
-            format=pyaudio.paInt16,
-            stream_callback=write_callback,
-            output=True,
-        )
-
         self._reading_thread = Thread(target=self._read_audio_data)
         self._reading_thread.start()
-        self._writing_thread = Thread(target=self._write_audio_data)
-        self._writing_thread.start()
+
+        self._write_streams = {}
+        for address in peer_addresses:
+            self._write_streams[address] = AudioStream(p)
 
     def is_in(self, events: dict) -> bool:
         return self._socket in events
@@ -87,13 +112,14 @@ class AudioManager:
 
         return data
 
-    def write(self, data: bytes):
-        self._buffer_queue.put(data)
+    def write(self, data: bytes, address: str):
+        self._write_streams[address].write(data)
 
     def stop(self):
         self._shutdown.set()
         self._read_stream.close()
-        self._write_stream.close()
+        for stream in self._write_streams.values():
+            stream.stop()
 
     def _read_audio_data(self):
         context = zmq.Context.instance()
@@ -115,18 +141,3 @@ class AudioManager:
 
                 socket.send(data)
                 data = b""
-
-    def _write_audio_data(self):
-        buffer = deque()
-
-        while not self._shutdown.is_set():
-            try:
-                data = self._buffer_queue.get(timeout=0.5)
-            except Empty:
-                continue
-            data = zlib.decompress(data)
-
-            for (frame,) in struct.iter_unpack("!h", data):
-                buffer.append(frame)
-                if len(buffer) > 16000:
-                    self._write_queue.put(buffer.popleft())

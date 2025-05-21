@@ -25,20 +25,21 @@ class NetworkManager:
 
         self._local_address = local_address
         self._username = username
-        self._peer_addresses = peer_addresses
         self._room_code = room_code
 
         self._pub_socket = context.socket(zmq.PUB)
         self._pub_socket.bind(f"tcp://{self._local_address}")
 
+        self._peer_addresses = []
         self._sub_sockets = []
-        for peer_address in self._peer_addresses:
+        for peer_address in peer_addresses:
             sub_socket: zmq.Socket = context.socket(zmq.SUB)
             sub_socket.setsockopt(zmq.SUBSCRIBE, room_code.encode("ascii"))
             sub_socket.connect(f"tcp://{peer_address}")
             poller.register(sub_socket, zmq.POLLIN)
 
             self._sub_sockets.append(sub_socket)
+            self._peer_addresses.append(peer_address)
 
     def is_in(self, events: dict) -> bool:
         for socket in self._sub_sockets:
@@ -47,13 +48,13 @@ class NetworkManager:
 
         return False
 
-    def read(self) -> list[MessageFrame]:
+    def read(self) -> list[tuple[MessageFrame, str]]:
         messages = []
 
-        for socket in self._sub_sockets:
+        for socket, address in zip(self._sub_sockets, self._peer_addresses):
             try:
                 data = socket.recv(zmq.DONTWAIT)
-                messages.append(MessageFrame.from_bytes(data))
+                messages.append((MessageFrame.from_bytes(data), address))
             except zmq.ZMQError:
                 # No new messages
                 pass
