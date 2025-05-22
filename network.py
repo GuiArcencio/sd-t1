@@ -1,6 +1,5 @@
 import zmq
 
-
 from message import MessageFrame
 
 
@@ -78,6 +77,17 @@ class NetworkManager:
             username_length=len(self._username),
             username=self._username,
             message_type=MessageFrame.MESSAGE_AUDIO,
+            data=data,
+        )
+
+        self._pub_socket.send(frame.to_bytes())
+
+    def write_video(self, data: bytes):
+        frame = MessageFrame(
+            room_code=self._room_code,
+            username_length=len(self._username),
+            username=self._username,
+            message_type=MessageFrame.MESSAGE_VIDEO,
             data=data,
         )
 

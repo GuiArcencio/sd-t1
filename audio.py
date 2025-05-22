@@ -1,10 +1,11 @@
-import zmq
-import pyaudio
-from queue import Queue, Empty
 import struct
-from threading import Thread, Event
-from collections import deque
 import zlib
+from collections import deque
+from queue import Empty, Queue
+from threading import Event, Thread
+
+import pyaudio
+import zmq
 
 SAMPLE_RATE = 16000
 

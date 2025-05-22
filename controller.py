@@ -1,9 +1,12 @@
-import zmq
 from threading import Thread
+
+import zmq
+
 from audio import AudioManager
 from message import MessageFrame
 from network import NetworkManager
 from text import TextManager
+from video import VideoManager
 
 
 def run_main_loop(
@@ -20,6 +23,7 @@ def run_main_loop(
     )
     text_manager = TextManager(username, poller)
     audio_manager = AudioManager(poller)
+    video_manager = VideoManager(poller)
 
     def _main_loop():
         running = True
@@ -31,6 +35,8 @@ def run_main_loop(
                 for msg in msgs:
                     if msg.message_type == MessageFrame.MESSAGE_AUDIO:
                         audio_manager.write(msg.data, msg.username)
+                    elif msg.message_type == MessageFrame.MESSAGE_VIDEO:
+                        video_manager.write(msg.data, msg.username)
                     else:
                         text_manager.write(msg.username, msg.data.decode("utf-8"))
 
@@ -42,6 +48,10 @@ def run_main_loop(
                 data = audio_manager.read()
                 network_manager.write_audio(data)
 
+            if video_manager.is_in(events):
+                data = video_manager.read()
+                network_manager.write_video(data)
+
             if text_manager.user_has_quit():
                 running = False
 
@@ -52,3 +62,4 @@ def run_main_loop(
     text_manager.run_app(username)
 
     audio_manager.stop()
+    video_manager.stop()

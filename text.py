@@ -1,10 +1,11 @@
-import zmq
 import asyncio
-from threading import Thread, Event, Lock
+from threading import Event, Lock, Thread
+
+import zmq
 from textual import on
 from textual.app import App, ComposeResult
-from textual.widgets import Log, Input
 from textual.containers import VerticalGroup
+from textual.widgets import Input, Log
 
 
 class TextApp(App):
